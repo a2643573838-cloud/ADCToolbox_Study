@@ -1,0 +1,741 @@
+function [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = plotspec(sig,varargin)
+%PLOTSPEC Plot power spectrum and calculate ADC performance metrics
+%   This function performs spectral analysis on ADC data and calculates key
+%   performance metrics including ENOB, SNDR, SFDR, SNR, and THD. It supports
+%   various windowing functions, oversampling ratio (OSR), coherent averaging,
+%   and customizable plotting options.
+%
+%   Syntax:
+%     [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = PLOTSPEC(sig)
+%     [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = PLOTSPEC(sig, Fs)
+%     [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = PLOTSPEC(sig, Fs, maxCode)
+%     [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = PLOTSPEC(sig, Fs, maxCode, harmonic)
+%     [enob,sndr,sfdr,snr,thd,sigpwr,noi,nsd,h] = PLOTSPEC(sig, 'Name', Value)
+%
+%   Inputs:
+%     sig - Signal to be plot, typically the ADC's output data
+%       Vector or Matrix (N_run x N_fft)
+%       Each row represents a separate measurement run for averaging
+%
+%   Optional Positional Inputs:
+%     Fs - Sampling frequency in Hz. Default: 1
+%       Scalar, positive real number
+%     maxCode - Full scale range (max-min). Default: max(sig)-min(sig)
+%       Scalar, positive real number
+%     harmonic - Number of harmonics to analyze. Default: 5
+%       Scalar, positive integer
+%       Set negative to exclude harmonics from noise calculation
+%
+%   Name-Value Parameters:
+%     'OSR' - Oversampling ratio. Default: 1 (no oversampling)
+%       Scalar, positive real number
+%       Defines signal bandwidth as Fs/(2*OSR)
+%     'window' - Window function. Default: 'hann'
+%       String: 'hann' (Hanning window) or 'rect' (Rectangle window)
+%       Function handle: e.g., @hann, @blackman, @rectwin (requires Signal Processing Toolbox)
+%       Alias: 'winType' (deprecated, use 'window')
+%     'maxSignal' - Full scale range (max-min). Default: max(sig)-min(sig)
+%       Scalar, positive real number
+%       Alias: 'maxCode' (deprecated, use 'maxSignal')
+%     'sideBin' - Number of extra bins to include on each side of signal peak. Default: 'auto'
+%       Scalar, non-negative integer or string 'auto'
+%       Total signal bins = 1 + 2*sideBin (center peak + sideBin on each side)
+%       'auto': Automatically detects sideBin by simulating ideal spectral leakage with the
+%               same window function and finding where it crosses the noise floor
+%               Adapts to window type (hann, rect, blackman, etc.) and noise characteristics
+%       Convention: sideBin = 1 for Hanning window if signal is coherent
+%     'label' - Enable plot annotations. Default: true
+%       Logical (true/false) or numeric (0/1)
+%     'assumedSignal' - Override signal power in dB. Default: NaN
+%       Scalar, real number or NaN
+%     'disp' - Enable plotting. Default: true
+%       Logical (true/false) or numeric (0/1)
+%       Alias: 'isPlot' (deprecated, use 'disp')
+%     'cutoff' - High-pass cutoff frequency for low-frequency noise removal in Hz. Default: 0
+%       Scalar, non-negative real number
+%       Alias: 'noFlicker' (deprecated, use 'cutoff')
+%     'nTHD' - Number of harmonics for THD calculation. Default: 5
+%       Scalar, positive integer
+%     'averageMode' - Averaging mode. Default: 'normal'
+%       String: 'normal' (power averaging), 'coherent' (coherent averaging with phase alignment)
+%       Number: 0 (normal), 1 (coherent)
+%       Alias: 'coAvg' (deprecated, use 'averageMode')
+%     'NFMethod' - Noise floor estimation method. Default: 'auto'
+%       String: 'auto' (median of all methods), 'median' (median-based), 'mean' (trimmed mean), 'exclude' (exclude harmonics)
+%       Number: 0 (auto), 1 (median-based), 2 (trimmed mean), 3 (exclude harmonics)
+%     'dispItem' - Display items selector. Default: 'sfedutrlyhop' (all items)
+%       String or char array where each character (case insensitive) enables a display item:
+%       's' - Signal power text and signal bin marker
+%       'f' - Input frequency and sampling frequency (Fin/Fs)
+%       'e' - Effective Number of Bits (ENOB)
+%       'd' - Signal-to-Noise and Distortion Ratio (SNDR)
+%       'u' - Spurious-Free Dynamic Range (SFDR)
+%       't' - Total Harmonic Distortion (THD)
+%       'r' - Signal-to-Noise Ratio (SNR)
+%       'l' - Noise floor level
+%       'y' - Noise Spectral Density (NSD) and horizontal dash line
+%       'o' - Oversampling Ratio (OSR) and vertical bandwidth line
+%       'h' - Harmonic markers
+%       'p' - Maximum spur marker
+%
+%   Outputs:
+%     enob - Effective Number of Bits
+%       Scalar, real number
+%       Calculated as (sndr-1.76)/6.02
+%     sndr - Signal-to-Noise and Distortion Ratio in dB
+%       Scalar, real number
+%     sfdr - Spurious-Free Dynamic Range in dB
+%       Scalar, real number
+%     snr - Signal-to-Noise Ratio in dB
+%       Scalar, real number
+%     thd - Total Harmonic Distortion in dB
+%       Scalar, real number
+%     sigpwr - Signal power in dBFS
+%       Scalar, real number
+%     noi - Noise Floor in dB
+%       Scalar, real number
+%     nsd - Noise Spectral Density in dBFS/Hz
+%       Scalar, real number
+%     h - Plot handle or empty array if disp=false
+%       Graphics handle or []
+%
+%   Examples:
+%     % Basic usage with default parameters (uses built-in Hanning window)
+%     [enob,sndr,sfdr] = plotspec(sig);
+%
+%     % Specify sampling frequency and full scale
+%     [enob,sndr,sfdr] = plotspec(sig, 100e6, 2^16);
+%
+%     % Use oversampling with rectangle window (no toolbox required)
+%     [enob,sndr,sfdr] = plotspec(sig, 'OSR', 32, 'window', 'rect');
+%
+%     % Use other window functions (requires Signal Processing Toolbox)
+%     [enob,sndr,sfdr] = plotspec(sig, 'OSR', 32, 'window', @blackman);
+%
+%     % Use trimmed mean for noise floor estimation
+%     [enob,sndr,sfdr] = plotspec(sig, 'NFMethod', 'mean');
+%
+%     % Multiple runs with coherent averaging
+%     sig = ones(10,1)*sin(2*pi*0.1*(0:1023)) + randn(10, 1024)*0.01; % 10 runs of 1024 samples
+%     [enob,sndr,sfdr] = plotspec(sig, 'averageMode', 'coherent');
+%
+%     % Disable plotting and use assumed signal power
+%     [enob,sndr,sfdr] = plotspec(sig, 'disp', false, 'assumedSignal', -3);
+%
+%   Notes:
+%     - Signal can be provided as a row vector, column vector, or matrix
+%     - For matrix input, each row is treated as a separate measurement
+%     - The FFT length is determined by the number of columns (or rows if column vector)
+%     - Coherent averaging ('coAvg') aligns phase before averaging to lower noise floor
+%     - The noise floor is calculated within the signal band [0, Fs/(2*OSR)]
+%     - Setting harmonic < 0 removes harmonics from both the analysis and display
+%     - dBFS = 0 referred to a full-scale sinewave signal
+%     - Built-in windows ('hann', 'rect') do not require Signal Processing Toolbox
+%     - Custom window function handles (e.g., @blackman) require Signal Processing Toolbox
+%
+%   See also: alias, sinfit, fft, window
+
+% Input parsing and validation
+p = inputParser;
+validScalarPosNum = @(x) isnumeric(x) && isscalar(x) && (x > 0);
+validScalarPosInt = @(x) isnumeric(x) && isscalar(x) && (x > 0) && (mod(x,1) == 0);
+validInteger = @(x) isnumeric(x) && isscalar(x) && (mod(x,1) == 0);
+validWindow = @(x) (ischar(x) && ismember(x, {'hann', 'rect'})) || isa(x, 'function_handle');
+validNFMethod = @(x) (isnumeric(x) && ismember(x, [0, 1, 2, 3])) || (ischar(x) && ismember(x, {'auto', 'median', 'mean', 'exclude'}));
+validAvgMode = @(x) (isnumeric(x) && ismember(x, [0, 1])) || (ischar(x) && ismember(x, {'normal', 'coherent'}));
+validLogical = @(x) islogical(x) || (isnumeric(x) && ismember(x, [0, 1]));
+addOptional(p, 'Fs', 1, validScalarPosNum);
+addOptional(p, 'maxCode', max(max(sig))-min(min(sig)), validScalarPosNum);
+addOptional(p, 'harmonic', 5, validInteger);
+addParameter(p, 'OSR', 1, validScalarPosNum);
+% Old parameter names (for backward compatibility)
+addParameter(p, 'winType', 'hann', validWindow);
+addParameter(p, 'isPlot', true, validLogical);
+addParameter(p, 'noFlicker', 0, validScalarPosNum);
+addParameter(p, 'coAvg', 0, @(x)ismember(x, [0, 1]));
+% New parameter names (aliases with higher priority)
+addParameter(p, 'window', 'hann', validWindow);
+addParameter(p, 'maxSignal', NaN, validScalarPosNum);
+addParameter(p, 'disp', NaN, validLogical);
+addParameter(p, 'cutoff', 0, validScalarPosNum);
+addParameter(p, 'averageMode', 'normal', validAvgMode);
+% Other parameters
+addParameter(p, 'sideBin', 'auto', @(x) (isnumeric(x) && isscalar(x) && (x >= 0)) || (ischar(x) && strcmp(x, 'auto')));
+addParameter(p, 'label', true, validLogical);
+addParameter(p, 'assumedSignal', NaN);
+addParameter(p, 'nTHD', 5, validScalarPosInt);
+addParameter(p, 'NFMethod', 'auto', validNFMethod);
+addParameter(p, 'dispItem', 'sfedutrlyhop', @(x) ischar(x) || isstring(x));
+parse(p, varargin{:});
+
+% Extract parsed parameters
+Fs = p.Results.Fs;
+harmonic = p.Results.harmonic;
+OSR = p.Results.OSR;
+sideBin = p.Results.sideBin;
+label = logical(p.Results.label);
+assumedSignal = p.Results.assumedSignal;
+nTHD = p.Results.nTHD;
+
+% Convert NFMethod from string to numeric if needed
+if ischar(p.Results.NFMethod)
+    switch p.Results.NFMethod
+        case 'auto'
+            nfmethod = 0;
+        case 'median'
+            nfmethod = 1;
+        case 'mean'
+            nfmethod = 2;
+        case 'exclude'
+            nfmethod = 3;
+    end
+else
+    nfmethod = p.Results.NFMethod;
+end
+
+% Handle aliased parameters (new names override old names)
+% averageMode/coAvg
+if ~isequal(p.Results.averageMode, 'normal')
+    % New name has priority if not default
+    if ischar(p.Results.averageMode)
+        switch p.Results.averageMode
+            case 'normal'
+                coAvg = 0;
+            case 'coherent'
+                coAvg = 1;
+        end
+    else
+        coAvg = p.Results.averageMode;
+    end
+else
+    % Fall back to old name
+    coAvg = p.Results.coAvg;
+end
+
+% maxSignal/maxCode
+if ~isnan(p.Results.maxSignal)
+    maxSignal = p.Results.maxSignal;  % New name has priority
+else
+    maxSignal = p.Results.maxCode;  % Fall back to old name
+end
+
+% window/winType - use windowFunc as internal variable to avoid shadowing built-in
+if ~isequal(p.Results.window, 'hann')
+    windowFunc = p.Results.window;  % New name has priority if not default
+else
+    windowFunc = p.Results.winType;  % Fall back to old name
+end
+
+% disp/isPlot - convert to logical
+if ~(isnumeric(p.Results.disp) && isnan(p.Results.disp))
+    dispPlot = logical(p.Results.disp);  % New name has priority, convert to logical
+else
+    dispPlot = logical(p.Results.isPlot);  % Fall back to old name, convert to logical
+end
+
+% cutoff/noFlicker
+if p.Results.cutoff > 0
+    cutoffFreq = p.Results.cutoff;  % New name has priority
+else
+    cutoffFreq = p.Results.noFlicker;  % Fall back to old name
+end
+
+% Parse dispItem flags
+dispItem = lower(char(p.Results.dispItem));
+show_s = any(dispItem == 's');
+show_f = any(dispItem == 'f');
+show_e = any(dispItem == 'e');
+show_d = any(dispItem == 'd');
+show_u = any(dispItem == 'u');
+show_t = any(dispItem == 't');
+show_r = any(dispItem == 'r');
+show_l = any(dispItem == 'l');
+show_y = any(dispItem == 'y');
+show_o = any(dispItem == 'o');
+show_h = any(dispItem == 'h');
+show_p = any(dispItem == 'p');
+
+% Determine data dimensions and FFT length
+% Convert column vector to row vector if needed
+[N,M] = size(sig);
+N_fft = M;
+if(M==1 && N > 1)
+    sig = sig';
+    N_fft = N;
+end
+
+[N_run,~] = size(sig);
+
+% Calculate number of positive frequency bins
+Nd2 = floor(N_fft/2)+1;
+
+% Generate frequency axis
+freq = (0:(Nd2-1))/N_fft*Fs;
+
+% Generate window function
+if ischar(windowFunc)
+    % Use embedded window functions (no toolbox required)
+    if strcmp(windowFunc, 'hann')
+        win = hannwin(N_fft);
+    elseif strcmp(windowFunc, 'rect')
+        win = rectwin_emb(N_fft);
+    else
+        win = rectwin_emb(N_fft);
+        warning("Unsupported window type '%s', using rectangle window", windowFunc);
+    end
+else
+    % Use function handle (requires Signal Processing Toolbox)
+    try
+        win = window(windowFunc,N_fft,'periodic')';
+    catch
+        try
+            win = window(windowFunc,N_fft)';
+        catch
+            win = rectwin_emb(N_fft);
+            warning("Unsupported window function, using rectangle window");
+        end
+    end
+end
+
+% Initialize spectrum accumulator and measurement counter
+spec = zeros([1,N_fft]);
+ME = 0;
+for iter = 1:N_run
+    tdata = sig(iter,:);
+    % Skip empty data
+    if(rms(tdata)==0)
+        continue;
+    end
+    % Normalize to full scale, remove DC, and apply window
+    tdata = tdata./maxSignal;
+    tdata = tdata-mean(tdata);
+    tdata = tdata.*win/sqrt(mean(win.^2));
+
+    if(coAvg)
+        % Coherent averaging: align phase before averaging
+        tspec = fft(tdata);
+        tspec(1) = 0;  % Remove DC component
+        % Find fundamental signal bin in signal band
+        [~, bin] = max(abs(tspec(1:floor(N_fft/2/OSR))));
+        % Guard against bin = 1 (DC bin) which would cause division by zero
+        if bin == 1
+            warning('Signal detected at DC bin, skipping coherent averaging for this run');
+            continue;
+        end
+        phi = tspec(bin)/abs(tspec(bin));  % Extract phase of fundamental
+
+        % Phase alignment: rotate spectrum to align fundamental phase
+        phasor = conj(phi);
+        marker = zeros(1,N_fft);
+        % Apply phase shift to harmonics (accounting for aliasing)
+        for iter2 = 1:N_fft
+            J = (bin-1)*iter2;
+            % Determine if harmonic is in even or odd Nyquist zone
+            if(mod(floor(J/N_fft*2),2) == 0)
+                % Even zone: normal aliasing
+                b = J-floor(J/N_fft)*N_fft+1;
+                if(marker(b) == 0)
+                    tspec(b) = tspec(b).*phasor;
+                    marker(b) = 1;
+                end
+            else
+                % Odd zone: mirrored aliasing
+                b = N_fft-J+floor(J/N_fft)*N_fft+1;
+                if(marker(b) == 0)
+                    tspec(b) = tspec(b).*conj(phasor);
+                    marker(b) = 1;
+                end
+            end
+            phasor = phasor * conj(phi);
+        end
+
+        % Apply phase shift to non-harmonic components
+        for iter2 = 1:N_fft
+            if(marker(iter2) == 0)
+                tspec(iter2) = tspec(iter2).*(conj(phi).^((iter2-1)/(bin-1)));
+            end
+        end
+
+        spec = spec + tspec;  % Coherent sum
+
+    else
+        % Power averaging: accumulate power spectrum
+        spec = spec+abs(fft(tdata)).^2;
+    end
+
+    ME = ME+1;
+end
+
+% Normalize spectrum based on averaging method
+if(coAvg)
+    % Coherent averaging: take magnitude squared after sum, scale by number of runs
+    spec = abs(spec).^2/(N_fft^2)*16/ME^2;
+else
+    % Power averaging: scale by number of runs
+    spec(1) = 0;  % Remove DC
+    spec = spec/(N_fft^2)*16/ME;
+end
+spec = spec(1:Nd2);  % Keep only positive frequencies
+spec_inband = spec(1:floor(N_fft/2/OSR));  % Extract signal band
+
+
+% Remove flicker noise (1/f noise) if requested
+if cutoffFreq > 0
+    spec(1:ceil(cutoffFreq/Fs*N_fft)) = 0;
+end
+
+% Find signal bin and refine using parabolic interpolation
+[~, bin] = max(spec_inband);
+sig_e = log10(spec(bin));
+sig_l = log10(spec(min(max(bin-1,1),Nd2)));
+sig_r = log10(spec(min(max(bin+1,1),Nd2)));
+% Parabolic interpolation for sub-bin frequency accuracy
+bin_r = bin + (sig_r-sig_l)/(2*sig_e-sig_l-sig_r)/2;
+if(isnan(bin_r))
+    bin_r = bin;
+end
+
+% Warn if signal is off-bin, indicating likely spectrum leakage
+bin_offset = bin_r - bin;
+if abs(bin_offset) > 0.01
+    warning('plotspec:spectrumLeakage', ...
+        'Main tone is off-bin by %.2f%%, indicating likely spectrum leakage. Consider using a good window function or ensuring coherent sampling.', ...
+            bin_offset * 100);
+end
+
+% Auto-detect sideBin if set to 'auto'
+if ischar(sideBin) && strcmp(sideBin, 'auto')
+    % Step 1: Generate ideal spectrum at bin_r frequency
+    % Create synthetic sinewave with unit amplitude
+    t = 0:(N_fft-1);
+    ideal_signal = sin(2*pi*(bin_r-1)/N_fft * t);
+
+    % Apply same window and normalization as actual data
+    ideal_signal = ideal_signal .* win / sqrt(mean(win.^2));
+
+    % Compute FFT to get ideal spectrum shape
+    ideal_spec = abs(fft(ideal_signal)).^2 / (N_fft^2) * 16;
+    ideal_spec = ideal_spec(1:Nd2);  % Keep positive frequencies only
+
+    % Scale ideal spectrum to match actual signal magnitude at peak
+    % This ensures we compare spectral leakage at the same signal strength
+    scale_factor = spec(bin) / ideal_spec(bin);
+    ideal_spec = ideal_spec * scale_factor;
+
+    % Step 2: Estimate noise floor using median (robust to signal peak outliers)
+    n_inband = floor(N_fft/2/OSR);
+    noise_floor_per_bin = median(spec(1:n_inband));
+
+    % Step 3: Find crossing points where ideal spectrum meets noise floor
+    sideBin = 0;
+    max_sidebin = min(bin-1, n_inband-bin);
+
+    % Search outward from peak until ideal spectrum drops below noise floor
+    for sb = 1:max_sidebin
+        left_bin = bin - sb;
+        right_bin = bin + sb;
+
+        % Check if both left and right bins are below noise floor in ideal spectrum
+        left_below = (left_bin >= 1) && (ideal_spec(left_bin) <= noise_floor_per_bin);
+        right_below = (right_bin <= n_inband) && (ideal_spec(right_bin) <= noise_floor_per_bin);
+
+        if left_below && right_below
+            % Both sides below noise floor, use previous sb
+            sideBin = sb - 1;
+            break;
+        end
+    end
+
+    % If never broke out, use maximum
+    if sideBin == 0
+        sideBin = max_sidebin;
+    end
+end
+
+% Calculate signal power including side bins
+sig = sum(spec(max(bin-sideBin,1):min(bin+sideBin,floor(N_fft/2/OSR))));
+pwr = 10*log10(sig);
+% Override with assumed signal power if provided
+if(~isnan(assumedSignal))
+    sig = 10.^(assumedSignal/10);
+    pwr = assumedSignal;
+end
+
+% Remove harmonics from spectrum for display if harmonic < 0
+if(harmonic < 0)
+    for i = 2:-harmonic
+        b = alias(round((bin_r-1)*i),N_fft);
+        spec(max(b+1-sideBin,1):min(b+1+sideBin,Nd2)) = 0;
+    end
+end
+
+% Plot spectrum if requested
+if(dispPlot)
+    % Use linear or log scale depending on OSR
+    if (OSR == 1)
+        h = plot(freq,10*log10(spec+10^(-20)));
+    else
+        h = semilogx(freq,10*log10(spec+10^(-20)));
+    end
+
+    grid on;
+    hold on;
+    % Mark signal bins if label enabled
+    if(label && show_s)
+        if (OSR == 1)
+            plot(freq(max(bin-sideBin,1):min(bin+sideBin,Nd2)),10*log10(spec(max(bin-sideBin,1):min(bin+sideBin,Nd2))),'r-','linewidth',0.5);
+            plot(freq(bin),10*log10(spec(bin)),'ro','linewidth',0.5);
+        else
+            semilogx(freq(max(bin-sideBin,1):min(bin+sideBin,Nd2)),10*log10(spec(max(bin-sideBin,1):min(bin+sideBin,Nd2))),'r-','linewidth',0.5);
+        end
+    end
+    % Mark harmonics if requested
+    if(harmonic > 0 && show_h)
+        for i = 2:harmonic
+            b = alias(round((bin_r-1)*i),N_fft);
+            plot(b/N_fft*Fs,10*log10(spec(b+1)+10^(-20)),'rs');
+            text(b/N_fft*Fs,10*log10(spec(b+1)+10^(-20))+5,num2str(i),'fontname','Arial','fontsize',12,'horizontalalignment','center');
+        end
+    end
+end
+
+% Calculate SNDR and SFDR
+% Save signal bin value for SFDR calculation
+sigs = spec(bin);
+if(~isnan(assumedSignal))
+    sigs = 10.^(assumedSignal/10);
+end
+% Remove signal and DC from spectrum for noise/distortion calculation
+spec(max(bin-sideBin,1):min(bin+sideBin,Nd2)) = 0;
+spec(1:sideBin) = 0;
+spec_inband = spec(1:floor(N_fft/2/OSR));
+noi = sum(spec_inband);  % Total noise + distortion power
+
+% Find largest spur for SFDR
+[spur, sbin] = max(spec_inband);
+SNDR = 10*log10(sig/noi);
+SFDR = 10*log10(sigs/spur);
+ENoB = (SNDR-1.76)/6.02;
+
+% Mark maximum spur on plot
+if(dispPlot && label && show_p)
+    plot((sbin-1)/N_fft*Fs,10*log10(spur+10^(-20)),'rd');
+    text((sbin-1)/N_fft*Fs,10*log10(spur+10^(-20))+5,'MaxSpur','fontname','Arial','fontsize',10,'horizontalalignment','center');
+end
+
+% Calculate noise floor using all methods and select per NFMethod
+n_inband = floor(N_fft/2/OSR);
+spec_inband = spec(1:n_inband);
+% Method 1: Median-based estimation (robust to spurs)
+if(N_run == 1)
+    % Mn = 0.4549364231; % theoretical value of the median of chi-squared distribution, but not working well
+    Mn = 0.72;      % this empirical value works well, but why??
+else
+    Mn = (1-2/(9*N_run))^3;     % Wilson–Hilferty approximation of the median of chi-squared distribution
+end
+noi_median = median(spec_inband)/Mn * n_inband;
+% Method 2: Trimmed mean (removes top/bottom 5%)
+spec_sort = sort(spec_inband);
+noi_mean = mean(spec_sort(max(1,floor(n_inband*0.05)):max(1,floor(n_inband*0.95)))) * n_inband;
+% Method 3: Exclude harmonics from noise calculation
+spec_noise = spec;
+for i = 2:nTHD
+    b = alias(round((bin_r-1)*i),N_fft) +1;
+    spec_noise(b) = 0;
+end
+noi_exclude = sum(spec_noise(1:n_inband));
+
+if(nfmethod == 0)
+    % Auto: median of all methods
+    noi = median([noi_median, noi_mean, noi_exclude]);
+    % Warn if results differ significantly (>25% or ~1dB)
+    noi_all = [noi_median, noi_mean, noi_exclude];
+    if max(noi_all) / min(noi_all) > 1.25
+        warning('plotspec:irregularNoiseFloor', ...
+            'Noise floor estimation methods differ by %.1f dB. The noise floor may be irregular. Consider manually selecting NFMethod (''median'', ''mean'', or ''exclude'').', ...
+            10*log10(max(noi_all) / min(noi_all)));
+    end
+elseif(nfmethod == 1)
+    noi = noi_median;
+elseif(nfmethod == 2)
+    noi = noi_mean;
+else
+    noi = noi_exclude;
+end
+
+% Calculate THD by summing harmonic power
+thd = 0;
+for i = 2:nTHD
+    b = alias(round((bin_r-1)*i),N_fft) +1;
+    thd = thd + spec(b);
+end
+
+THD = 10*log10(thd/sigs);
+SNR = 10*log10(sig/noi);
+NF = SNR - pwr;  % Noise floor relative to 0 dBFS
+
+% Finalize plot formatting and annotations
+if(dispPlot)
+    % Set axis limits based on noise floor
+    minx = min(max(median(10*log10(spec_inband))-20,-200),-40);
+    axis([Fs/N_fft,Fs/2,minx,0]);
+    if(label)
+        % Draw signal bandwidth limit
+        if(show_o)
+            plot([1,1]*Fs/2/OSR,[0,-1000],'--');
+        end
+        % Determine text position based on scale and signal location
+        if(OSR>1)
+            TX = 10^(log10(Fs)*0.01+log10(Fs/N_fft)*0.99);
+        else
+            if((bin-1)/N_fft < 0.2)
+                TX = Fs*0.3 + Fs/N_fft*0.7;
+            else
+                TX = Fs*0.01 + Fs/N_fft;
+            end
+        end
+
+        TYD = minx*0.06;  % Text vertical spacing
+
+        % Format sampling frequency with SI prefixes
+        if(Fs >= 10^9)
+            txt_fs = num2str(Fs/10^9,'%.1fG');
+        elseif(Fs >= 10^6)
+            txt_fs = num2str(Fs/10^6,'%.1fM');
+        elseif(Fs >= 10^3)
+            txt_fs = num2str(Fs/10^3,'%.1fK');
+        elseif(Fs >= 1)
+            txt_fs = num2str(Fs,'%.1f');
+        else
+            txt_fs = num2str(Fs,'%.3f');
+        end
+
+        % Format input frequency with SI prefixes
+        Fin = (bin_r-1)/N_fft*Fs;
+        if(Fin >= 10^9)
+            txt_fin = num2str(Fin/10^9,'%.1fG');
+        elseif(Fin >= 10^6)
+            txt_fin = num2str(Fin/10^6,'%.1fM');
+        elseif(Fin >= 10^3)
+            txt_fin = num2str(Fin/10^3,'%.1fK');
+        elseif(Fin >= 1)
+            txt_fin = num2str(Fin,'%.1f');
+        else
+            txt_fin = num2str(bin_r/N_fft*Fs,'%.3f');
+        end
+
+        % Display performance metrics
+        TYN = 0;
+        if(show_f)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['Fin/Fs = ',txt_fin,' / ',txt_fs,' Hz']);
+        end
+        if(show_e)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['ENoB = ',num2str(ENoB,'%.2f')]);
+        end
+        if(show_d)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['SNDR = ',num2str(SNDR,'%.2f'),' dB']);
+        end
+        if(show_u)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['SFDR = ',num2str(SFDR,'%.2f'),' dB']);
+        end
+        if(show_t)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['THD = ',num2str(THD,'%.2f'),' dB']);
+        end
+        if(show_r)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['SNR = ',num2str(SNR,'%.2f'),' dB']);
+        end
+        if(show_l)
+            TYN = TYN + 1;
+            text(TX,TYD*TYN,['Noise Floor = ',num2str(NF,'%.2f'),' dB']);
+        end
+
+        % Display additional metrics and noise floor line
+        if (OSR>1)
+            if(show_s)
+                text(bin/N_fft*Fs,min(pwr,TYD/2),['Sig = ',num2str(pwr,'%.2f'),' dB']);
+            end
+            if(show_y)
+                semilogx([Fs/N_fft,Fs/2/OSR],-[1,1]*(NF+10*log10(N_fft/2/OSR)),'r--');
+                TYN = TYN + 1;
+                text(TX,TYD*TYN,['NSD = ',num2str(-NF-10*log10(Fs/2/OSR),'%.2f'),' dBFS/Hz']);
+            end
+            if(show_o)
+                TYN = TYN + 1;
+                text(TX,TYD*TYN,['OSR = ',num2str(OSR,'%.2f')]);
+            end
+        else
+            % Position signal power label to avoid signal peak
+            if(show_s)
+                if(bin/N_fft>0.4)
+                    text((bin/N_fft-0.01)*Fs,min(pwr,TYD/2),['Sig = ',num2str(pwr,'%.2f'),' dB'],'horizontalAlignment','right');
+                else
+                    text((bin/N_fft+0.01)*Fs,min(pwr,TYD/2),['Sig = ',num2str(pwr,'%.2f'),' dB']);
+                end
+            end
+            if(show_y)
+                plot([0,Fs/2],-[1,1]*(NF+10*log10(N_fft/2/OSR)),'r--');
+                TYN = TYN + 1;
+                text(TX,TYD*TYN,['NSD = ',num2str(-NF-10*log10(Fs/2/OSR),'%.2f'),' dBFS/Hz']);
+            end
+        end
+    end
+    % Set axis labels and title
+    xlabel('Freq (Hz)');
+    ylabel('dBFS');
+    if(N_run > 1)
+        if(coAvg)
+            title(sprintf('Power Spectrum (%dx Coherently Averaged)',N_run));
+        else
+            title(sprintf('Power Spectrum (%dx Averaged)',N_run));
+        end
+    else
+        title('Power Spectrum');
+    end
+end
+
+% Assign output variables with new names
+enob = (SNDR-1.76)/6.02;
+sndr = SNDR;
+sfdr = SFDR;
+snr = SNR;
+thd = THD;
+sigpwr = pwr;
+noi = NF;
+nsd = -(NF + 10*log10(Fs/2/OSR));
+
+if(~dispPlot)
+    h = [];
+end
+
+% Nested functions for embedded window generation (no toolbox required)
+    function w = rectwin_emb(N)
+        % RECTWIN_EMB Embedded rectangle (boxcar) window function
+        %   w = RECTWIN_EMB(N) returns an N-point rectangle window in a row vector
+        %   This is a simple embedded implementation that doesn't require
+        %   the Signal Processing Toolbox
+        w = ones(1, N);
+    end
+
+    function w = hannwin(N)
+        % HANNWIN Embedded Hanning window function
+        %   w = HANNWIN(N) returns an N-point Hanning (raised cosine) window
+        %   in a row vector. This is a simple embedded implementation that
+        %   doesn't require the Signal Processing Toolbox
+        %
+        %   The Hanning window is defined as:
+        %   w(n) = 0.5 * (1 - cos(2*pi*n/(N-1))) for n = 0, 1, ..., N-1
+        if N == 1
+            w = 1;
+        else
+            n = 0:(N-1);
+            w = 0.5 * (1 - cos(2*pi*n/N));
+        end
+    end
+
+end

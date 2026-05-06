@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adctoolbox"
+dynamic = ["version"]
+description = "ADC Testing and Analysis Toolkit"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.23.0",
+    "matplotlib>=3.6.0",
+    "scipy>=1.9.0",
+]
+
+[project.scripts]
+adctoolbox-get-examples = "adctoolbox.cli:copy_examples"
+adctoolbox-install-skill = "adctoolbox.skill_cli:main"
+
+[project.optional-dependencies]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=2.0.0",
+    "sphinx-autodoc-typehints>=1.24.0",
+    "myst-parser>=2.0.0",
+    "sphinx-intl",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"adctoolbox.examples.data" = ["*.csv"]
+"adctoolbox.examples" = ["*.md"]
+"adctoolbox._bundled_skills" = [
+    "skills/*/SKILL.md",
+    "skills/*/LICENSE.txt",
+    "skills/*/references/*.md",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "adctoolbox.__version__"}

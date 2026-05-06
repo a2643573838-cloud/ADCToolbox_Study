@@ -1,0 +1,10 @@
+%% Run all unit tests
+
+run_unit_tests_common
+
+run_unit_tests_aout
+
+run_unit_tests_dout
+
+
+test_jitter_load
