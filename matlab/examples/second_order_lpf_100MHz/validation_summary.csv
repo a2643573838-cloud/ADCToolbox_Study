@@ -1,0 +1,2 @@
+fc_Hz,R_ohm,L_H,C_F,Q,magnitude_at_fc_dB,phase_at_fc_deg,fc_magnitude_error_dB,pass
+100000000,88.8576587631673,1e-07,2.53302959105845e-11,0.707106781186547,-3.01029995663981,-90,1.85629289717326e-13,1

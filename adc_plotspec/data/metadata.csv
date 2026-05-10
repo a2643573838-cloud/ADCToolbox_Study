@@ -1,0 +1,5 @@
+file,Fs_Hz,maxCode,samples,description
+coherent_10bit_sine.csv,1000000,1024,4096,"integer-bin sine, J=127"
+leaky_10bit_sine.csv,1000000,1024,4096,"off-bin sine, J=127.35"
+multirun_10bit_sine.csv,1000000,1024,4096,"8 runs x 4096 samples"
+osr_noise_shaped_like.csv,1000000,1024,8192,"OSR demo, J=23, shaped noise"
