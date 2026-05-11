@@ -31,49 +31,50 @@ nbits = 10;
 maxCode = 2^nbits;
 harmonic = 5;
 
+%%
 fprintf('Example 0: alias dependency check\n');
 disp(table([30; 70; 130], alias([30; 70; 130], 100), ...
     'VariableNames', {'InputFrequency', 'AliasedFrequency'}));
-
+%%
 fprintf('\nExample 1: coherent 10-bit sine, Hann window\n');
 sig = readmatrix(fullfile(dataDir, 'coherent_10bit_sine.csv'));
 figure('Name', 'Coherent 10-bit sine, Hann window');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sig, Fs, maxCode, harmonic, ...
-    'window', 'hann', 'sideBin', 'auto');
+    'window', 'hann', 'sideBin', 'auto','NFMethod', 'mean');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 fprintf('\nExample 2: same coherent sine, rectangle window\n');
 figure('Name', 'Coherent 10-bit sine, rectangle window');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sig, Fs, maxCode, harmonic, ...
     'window', 'rect', 'sideBin', 0);
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 fprintf('\nExample 3: off-bin sine, observe spectral leakage\n');
 sigLeak = readmatrix(fullfile(dataDir, 'leaky_10bit_sine.csv'));
 figure('Name', 'Leaky 10-bit sine');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sigLeak, Fs, maxCode, harmonic, ...
-    'window', 'hann', 'sideBin', 'auto');
+    'window', 'hann', 'sideBin', 'auto', 'NFMethod', 'mean');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 fprintf('\nExample 4: multi-run data, coherent averaging\n');
 sigMulti = readmatrix(fullfile(dataDir, 'multirun_10bit_sine.csv'));
 figure('Name', 'Multi-run coherent averaging');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sigMulti, Fs, maxCode, harmonic, ...
     'window', 'hann', 'averageMode', 'coherent', 'sideBin', 'auto');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 fprintf('\nExample 5: OSR analysis with shaped-noise-like data\n');
 sigOsr = readmatrix(fullfile(dataDir, 'osr_noise_shaped_like.csv'));
 figure('Name', 'OSR noise-shaped-like example');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sigOsr, Fs, maxCode, harmonic, ...
     'window', 'hann', 'OSR', 16, 'sideBin', 'auto', 'NFMethod', 'median');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 fprintf('\nExample 6: numeric-only call without plotting\n');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sig, Fs, maxCode, harmonic, ...
     'disp', false);
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
-
+%%
 function printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd)
     fprintf('  ENOB   = %8.3f bits\n', enob);
     fprintf('  SNDR   = %8.3f dB\n', sndr);

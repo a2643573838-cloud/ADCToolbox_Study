@@ -373,7 +373,7 @@ if(coAvg)
 else
     % Power averaging: scale by number of runs
     spec(1) = 0;  % Remove DC
-    spec = spec/(N_fft^2)*16/ME;
+    spec = spec/(N_fft^2)*16/ME;    % 乘16也是为了幅度归一化，让满摆幅的归为0dBFS
 end
 spec = spec(1:Nd2);  % Keep only positive frequencies
 spec_inband = spec(1:floor(N_fft/2/OSR));  % Extract signal band
