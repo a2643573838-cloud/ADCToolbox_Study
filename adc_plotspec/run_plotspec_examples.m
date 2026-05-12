@@ -40,13 +40,13 @@ fprintf('\nExample 1: coherent 10-bit sine, Hann window\n');
 sig = readmatrix(fullfile(dataDir, 'coherent_10bit_sine.csv'));
 figure('Name', 'Coherent 10-bit sine, Hann window');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sig, Fs, maxCode, harmonic, ...
-    'window', 'hann', 'sideBin', 'auto','NFMethod', 'mean');
+    'window', 'hann', 'sideBin', 'auto','NFMethod', 'exclude');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
 %%
 fprintf('\nExample 2: same coherent sine, rectangle window\n');
 figure('Name', 'Coherent 10-bit sine, rectangle window');
 [enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd] = plotspec(sig, Fs, maxCode, harmonic, ...
-    'window', 'rect', 'sideBin', 0);
+    'window', 'rect', 'sideBin', 0,'NFMethod', 'exclude');
 printMetrics(enob, sndr, sfdr, snr, thd, sigpwr, noi, nsd);
 %%
 fprintf('\nExample 3: off-bin sine, observe spectral leakage\n');
