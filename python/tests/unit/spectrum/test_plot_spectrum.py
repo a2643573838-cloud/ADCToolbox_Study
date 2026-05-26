@@ -5,12 +5,109 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from adctoolbox.spectrum.compute_spectrum import compute_spectrum
-from adctoolbox.spectrum.plot_spectrum import plot_spectrum
+from adctoolbox.spectrum.plot_spectrum import (
+    _noise_floor_axis_min,
+    _should_label_harmonic,
+    plot_spectrum,
+)
 
 
 # Create output directory for test figures
 output_dir = Path(__file__).parent / "test_output"
 output_dir.mkdir(exist_ok=True)
+
+
+@pytest.mark.parametrize(
+    "nf_line_level,expected",
+    [
+        (-113.1, -140),
+        (-80.0, -100),
+        (-79.9, -100),
+        (-179.9, -200),
+        (-220.0, -200),
+    ],
+)
+def test_noise_floor_axis_min_uses_20db_tick_below_nsd_line(nf_line_level, expected):
+    assert _noise_floor_axis_min(nf_line_level) == expected
+
+
+def test_noise_floor_axis_min_falls_back_to_sndr_level_when_nsd_is_nan():
+    assert _noise_floor_axis_min(np.nan, fallback_level=-26.5) == -60
+
+
+def test_plot_spectrum_uses_sndr_fallback_ylim_when_noise_metrics_are_nan():
+    n_fft = 8
+    fs = 100e6
+    n = np.arange(n_fft)
+    signal = (
+        0.4 * np.sin(2 * np.pi * n / n_fft)
+        + 0.4 * 10**(-30 / 20) * np.sin(2 * 2 * np.pi * n / n_fft)
+    )
+
+    with pytest.warns(RuntimeWarning, match="No noise bins remain"):
+        result = compute_spectrum(
+            signal,
+            fs=fs,
+            max_scale_range=[-0.5, 0.5],
+            win_type='rectangular',
+            side_bin=0,
+            max_harmonic=5,
+            nf_method=4,
+        )
+
+    fig, ax = plt.subplots()
+    plot_spectrum(result, show_title=False, show_label=False, ax=ax)
+    ymin, ymax = ax.get_ylim()
+    plt.close(fig)
+
+    assert ymin == -60
+    assert ymax == 0
+
+
+def test_plot_spectrum_labels_stay_fixed_when_ylim_changes():
+    n_fft = 2**12
+    fs = 100e6
+    n = np.arange(n_fft)
+    signal = 0.5 * np.sin(2 * np.pi * 123 * n / n_fft)
+    result = compute_spectrum(signal, fs=fs, win_type="rectangular", side_bin=0)
+
+    fig, ax = plt.subplots()
+    plot_spectrum(result, show_title=False, show_label=True, ax=ax)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+
+    prefixes = ("Fin/fs =", "SNDR =", "Sig =")
+    labels = [
+        next(text for text in ax.texts if text.get_text().startswith(prefix))
+        for prefix in prefixes
+    ]
+    before = np.array([label.get_window_extent(renderer).bounds for label in labels])
+
+    ax.set_ylim(-80, 0)
+    fig.canvas.draw()
+    after = np.array([label.get_window_extent(renderer).bounds for label in labels])
+    plt.close(fig)
+
+    np.testing.assert_allclose(after, before, atol=0.5)
+
+
+@pytest.mark.parametrize(
+    "harmonic_power_db,nf_line_level,expected",
+    [
+        (-132.0, -113.1, True),
+        (-133.1, -113.1, True),
+        (-133.2, -113.1, False),
+        (-150.0, -113.1, False),
+        (-120.0, np.nan, True),
+        (np.nan, -113.1, False),
+    ],
+)
+def test_should_label_harmonic_skips_bins_buried_below_nsd_line(
+    harmonic_power_db,
+    nf_line_level,
+    expected,
+):
+    assert _should_label_harmonic(harmonic_power_db, nf_line_level) is expected
 
 
 @pytest.mark.parametrize("hd2_target,hd3_target", [

@@ -1,129 +1,209 @@
 ---
 name: adctoolbox-user-guide
 description: >
-  Lightweight routing guide for using ADCToolbox from Python. Use this skill
-  whenever a task involves writing, fixing, reviewing, or explaining Python
-  code that uses ADCToolbox; choosing the right analysis helper; finding the
-  right packaged example; using flat exports versus submodule imports; running
-  dashboards; generating synthetic ADC data; or calibrating bit matrices.
+  Router skill for using ADCToolbox from Python. Trigger when a task
+  involves: computing or plotting spectra (SNDR, SFDR, ENOB, THD) from
+  ADC output, fitting a sine to measured aout, calibrating SAR weights
+  (weight_sine / weight_sine_lite), generating synthetic ADC
+  stimulus/output, or validating aout/dout buffer shapes. For deeper
+  debug (dashboards, phase-plane, bit-level, error decomposition,
+  static nonlinearity, cap-to-weight), open
+  references/advanced-debug.md.
+  NOT for analog topology selection, transistor sizing, Spectre
+  simulation, or layout/parasitic review — those belong to the
+  analog-agents skills (analog-design, analog-verify, analog-audit).
+  NOT for editing ADCToolbox source code — use
+  adctoolbox-contributor-guide instead.
 ---
 
 # ADCToolbox Usage Guide
 
-Use this skill as a router, not as a full manual.
+Router, not a full manual. Keep the basic tier resident; open
+`references/*.md` only when you need more.
 
-Source-of-truth order:
+## 1. When to use (and not to use)
 
-1. `python/src/adctoolbox/__init__.py` for flat Python exports
-2. `python/src/adctoolbox/*/__init__.py` for submodule-only Python tools
-3. `python/src/adctoolbox/examples/` for runnable usage patterns
+Use for:
+- Writing, fixing, or reviewing Python that calls ADCToolbox APIs
+- Picking the right spectrum / calibration helper
+- Getting from a raw `dout` / `aout` buffer to SNDR / SFDR / ENOB
+- Generating synthetic ADC stimulus for a testbench
+- **Forward-modeling an ADC architecture in Python** — for SAR, use
+  `adctoolbox.models.sar_convert` / `sar_reconstruct` / `sar_ideal_weights`
+  / `sar_apply_cap_mismatch` (binary or sub-radix-2, with optional unit-cap
+  mismatch + sampling noise + comparator noise; vectorized). Convention: `vin` is
+  interpreted relative to `quant_range=(v_min, v_max)`, default `(0, 1)`.
+  SAR weights are still explicit and normalized by `sum(bit_weights) + 1 LSB`
+  (for example `[8, 4, 2, 1] / 16`, or redundant `[8, 4, 4, 2, 1] / 20`).
+  For differential SAR, pass `VIP - VIN` with a differential `quant_range`
+  such as `(-VDD, VDD)`. Keep analog CDAC weights and digital reconstruction
+  weights explicit; they match unless modeling mismatch or calibration.
 
-Open references only as needed:
+Do NOT use for:
+- Analog topology / transistor design → `analog-design`, `analog-explore`
+- Spectre simulation, pre/post-layout audit → `analog-verify`, `analog-audit`
+- Editing ADCToolbox's own source → `adctoolbox-contributor-guide`
 
-- `references/api-quickref.md` for import paths, signatures, and return shapes
-- `references/example-map.md` for actual example files to adapt
+## 2. Critical conventions (read first — these are the common bug sources)
 
-## 1. Start From Examples
+### Names
 
-- If the user wants working usage code, open `references/example-map.md` first.
-- **Highly Recommended Baseline:** For the simplest and most standard ADC analysis and plotting template, refer directly to `02_spectrum/exp_s03_analyze_spectrum_savefig.py`.
-- Prefer adapting a packaged example over writing an API call pattern from
-  scratch.
-- The packaged CLI command is `adctoolbox-get-examples [dest]`.
+- **`bits`** is the per-sample binary decision matrix shape `(N_samples, N_bits)`,
+  values in `{0, 1}` — used by every digital-calibration / bit-level helper.
+- **`aout`** is the analog output (1D `float` array) — used by spectrum and
+  error-analysis helpers.
+- ADC integer codes are *not* `bits`; convert separately if your data is
+  packed as integers.
 
-## 2. Installing AI Skills
+### Frequency units
 
-To install this skill (or the contributor guide) for the user's local AI assistant, use the bundled CLI:
-```bash
-adctoolbox-install-skill [skills ...] [--dev] [--all] [--dest DEST] [--force]
-```
-- By default, it installs `adctoolbox-user-guide` locally (e.g., to `$CODEX_HOME/skills`).
-- Use `--dev` to also install the `adctoolbox-contributor-guide`.
-- Use `--list` to see available bundled skills.
-- Use `--force` to overwrite existing skills.
+- `fs`, `Fin`, plotting frequencies: **Hz**.
+- `fit_sine_4param(...)["frequency"]`: **normalized** `Fin/Fs` (range 0–0.5),
+  **not** Hz.
+- `calibrate_weight_sine`, `calibrate_weight_sine_lite`, `analyze_enob_sweep`,
+  `generate_dout_dashboard`: `freq` parameter is **normalized** `Fin/Fs`.
+- `generate_aout_dashboard`: `freq` is in **Hz** (it normalizes internally).
+- `analyze_spectrum` does NOT take `Fin` — it auto-detects the fundamental
+  from the FFT.
 
-## 3. Python Import Rules
+### Return shapes
 
-Use flat imports only for symbols actually exported by `adctoolbox`:
+Most analysis functions return `dict`. Notable exceptions and dict-key gotchas:
+
+| Function | Return |
+|---|---|
+| `analyze_spectrum`, `analyze_spectrum_polar`, `analyze_spectrum_virtuoso` | `dict` — keys: `enob`, `sndr_dbc`, `sfdr_dbc`, `snr_dbc`, `thd_dbc`, `sig_pwr_dbfs`, `noise_floor_dbfs`, `nsd_dbfs_hz`, `harmonics_dbc` |
+| `quick_sndr` | `dict` — minimal: only `sndr_dbc`, `enob`. No SFDR/THD/HD/NSD breakdown. |
+| `compute_spectrum` | `dict` — top-level keys `metrics` (same as above) and `plot_data` (`freq`, `power_spectrum_db_plot`, `complex_spectrum`, `fundamental_bin`, …) |
+| `fit_sine_4param` | `dict` — `frequency` (normalized), `amplitude`, `phase`, `dc_offset`, `rmse`, `fitted_signal`, `residuals` |
+| `find_coherent_frequency` | `tuple (fin_actual_hz, best_bin)` |
+| `calibrate_weight_sine` | `dict` — `weight`, `offset`, `calibrated_signal`, `ideal`, `error`, `refined_frequency` |
+| `calibrate_weight_sine_lite` | `ndarray` (weights only) |
+| `analyze_bit_activity` | `ndarray` (% of 1's per bit, length = N_bits) |
+| `analyze_overflow` | `tuple` of 4 ndarrays `(range_min, range_max, ovf_pct_zero, ovf_pct_one)` |
+| `analyze_enob_sweep` | `tuple (enob_sweep, n_bits_vec)` |
+| `analyze_weight_radix` | `dict` — `radix`, `wgtsca`, `effres` (weight-list resolution estimate) |
+| `fit_static_nonlin` | `tuple (k2, k3, fitted_sine, fitted_transfer)` |
+| `convert_cap_to_weight` | `tuple (weights, c_total)` |
+
+`analyze_weight_radix(weights)["effres"]` is computed from significant
+absolute weights as `log2(sum(abs_w_sig) / min(abs_w_sig) + 1)`. It estimates
+the theoretical span of the supplied SAR/DAC weight list; it is not a
+missing-code, DNL/INL, or SAR-reachability check.
+
+When docs conflict, trust the current `__init__.py` exports + the
+`tests/integration/test_user_guide_skill_examples.py` smoke tests.
+
+## 3. Basic workflow — spectrum
 
 ```python
-from adctoolbox import analyze_spectrum, fit_sine_4param, calibrate_weight_sine
+from adctoolbox import (
+    analyze_spectrum, analyze_spectrum_polar,
+    find_coherent_frequency, fit_sine_4param,
+)
+from adctoolbox.fundamentals import validate_aout_data
+
+validate_aout_data(aout)
+metrics = analyze_spectrum(aout, fs=fs, create_plot=False)
+print(metrics["sndr_dbc"], metrics["sfdr_dbc"], metrics["enob"])
 ```
 
-Use submodule imports for tools that are public but not flat-exported:
+For subplot layouts, pass the target Matplotlib axes directly. Do this before
+falling back to custom FFT plotting:
 
 ```python
-from adctoolbox.siggen import ADC_Signal_Generator
-from adctoolbox.toolset import generate_aout_dashboard, generate_dout_dashboard
+fig, axes = plt.subplots(3, 1)
+for ax, trace in zip(axes, traces):
+    metrics = analyze_spectrum(trace, fs=fs, create_plot=True, ax=ax)
+```
+
+When `side_bin=None`, spectrum tools use the selected window's coherent
+main-lobe width. If the capture is intentionally non-coherent, pass a larger
+`side_bin` explicitly; the analyzer does not infer that from the waveform.
+
+To set up a coherent capture *upstream* (where you control the stimulus
+frequency), snap `Fin` to an FFT bin first:
+
+```python
+fin_hz, k_bin = find_coherent_frequency(fs, fin_target_hz, n_fft=len(aout))
+# now drive the test with fin_hz
+```
+
+Pick the variant by output:
+- `analyze_spectrum` — magnitude spectrum + SNDR/SFDR/ENOB/THD metrics dict
+  (default — annotated white-bg plot, Hann window)
+- `analyze_spectrum_virtuoso` — same metrics, but Cadence Virtuoso /
+  ADE-Explorer dark-theme stem plot. Defaults to rectangular window
+  (one stem = one bin, no main-lobe smearing).
+- `analyze_spectrum_polar` — phase-aware (I/Q or mixer contexts); same keys
+- `quick_sndr` — **lean** SNDR + ENOB only. Use in optimization loops,
+  parameter sweeps, spec gates. No plot, no SFDR/THD/HD/NSD breakdown.
+  Returns just `{sndr_dbc, enob}`.
+- `compute_spectrum` (from `adctoolbox.spectrum`) — both metrics and plot-ready
+  data (access via `result["plot_data"]["freq"]` etc.)
+- `find_coherent_frequency` — pre-step at *signal generation* time, not analysis
+- `fit_sine_4param` — pre-step for nonlinearity work; remember its
+  `"frequency"` key is normalized `Fin/Fs`
+
+For the lean path:
+
+```python
+from adctoolbox import quick_sndr
+m = quick_sndr(aout, fs=fs)
+print(m["sndr_dbc"], m["enob"])
+# Override the window when the upstream stimulus is coherent and
+# you want a clean rectangular FFT instead of Hann:
+m = quick_sndr(aout, fs=fs, win_type='rectangular')
+```
+
+## 4. Basic workflow — digital calibration
+
+```python
+from adctoolbox import calibrate_weight_sine
 from adctoolbox.calibration import calibrate_weight_sine_lite
-from adctoolbox.fundamentals import validate_aout_data, validate_dout_data, convert_cap_to_weight
-from adctoolbox.aout import analyze_phase_plane, analyze_error_phase_plane
+from adctoolbox.fundamentals import validate_dout_data
+
+validate_dout_data(bits)            # bits: (N_samples, N_bits) in {0, 1}
+
+freq_norm = fin_hz / fs             # normalized — not Hz
+result = calibrate_weight_sine(bits, freq=freq_norm)
+weights = result["weight"]
+calibrated = result["calibrated_signal"]
+
+weights_fast = calibrate_weight_sine_lite(bits, freq_norm)   # ndarray, no dict
 ```
 
-Important:
+`calibrate_weight_sine` returns a dict with `weight`, `offset`,
+`calibrated_signal`, `ideal`, `error`, `refined_frequency`. The `_lite` variant
+returns just the weights ndarray and is positional (no `freq=` kw).
 
-- If a flat import fails, inspect the relevant submodule `__init__.py` before
-  assuming the tool does not exist.
+## 5. Import rules (compressed)
 
-## 4. Pick The Right Tool Family
+| Kind | Use |
+|---|---|
+| Anything re-exported by `adctoolbox.__init__` | `from adctoolbox import X` |
+| Submodule-only public tool (`siggen`, `toolset`, `aout`, `calibration`, `fundamentals`, `spectrum`) | `from adctoolbox.<submodule> import X` |
 
-**A. Basic Operations (Essential for Testbenches):**
-- **Dynamic FFT & Coherent Sampling**: 
-  `analyze_spectrum`, `analyze_spectrum_polar`, `find_coherent_frequency`
-- **Dashboard Summaries (Multi-Plot)**: 
-  `adctoolbox.toolset.generate_aout_dashboard`, `adctoolbox.toolset.generate_dout_dashboard`
+If a flat import fails, check the submodule's `__init__.py` before
+concluding the tool is gone. Common submodule-only names:
+`ADC_Signal_Generator` (siggen), `compute_spectrum` (spectrum),
+`calibrate_weight_sine_lite` (calibration), `validate_aout_data` /
+`validate_dout_data` / `convert_cap_to_weight` (fundamentals),
+`analyze_phase_plane` / `analyze_error_phase_plane` (aout),
+`generate_aout_dashboard` / `generate_dout_dashboard` (toolset).
 
-**B. Advanced Debug & Calibration:**
-- **Analog Debugging**: 
-  `fit_sine_4param`, error-analysis helpers, decomposition helpers, phase-plane helpers
-- **Digital Calibration**: 
-  `calibrate_weight_sine`, `calibrate_weight_sine_lite`, `analyze_bit_activity`, `analyze_overflow`, `analyze_enob_sweep`, `analyze_weight_radix`
+## 6. Going further
 
-**C. Utilities:**
-- **Signal Generation**: 
-  `adctoolbox.siggen.ADC_Signal_Generator`
-- **Unit Conversions**: 
-  use the flat-exported helpers directly from `adctoolbox`
+- Dashboards, phase-plane, bit-level, error decomposition, static
+  nonlinearity, cap-to-weight → **`references/advanced-debug.md`**
+- Function signatures / return keys → `references/api-quickref.md`
+- Ready-to-adapt example files → `references/example-map.md`
 
-Validate external inputs early:
+**Highly Recommended Baseline:** For the simplest end-to-end analysis
++ plot template, adapt `02_spectrum/exp_s03_analyze_spectrum_savefig.py`
+(see `references/example-map.md` for the path). The packaged CLI
+`adctoolbox-get-examples [dest]` dumps the full example tree.
 
-```python
-from adctoolbox.fundamentals import validate_aout_data, validate_dout_data
-
-validate_aout_data(signal)
-validate_dout_data(bits)
-```
-
-## 5. Critical Conventions
-
-### Frequency Units
-
-- `fs`, `Fin`, and plotting frequencies are in Hz.
-- `fit_sine_4param(... )['frequency']` is normalized `Fin/Fs`, not Hz.
-- `calibrate_weight_sine`, `calibrate_weight_sine_lite`, and many DOUT helpers
-  expect normalized `freq=Fin/Fs`.
-
-### Return Shapes Are Not Uniform
-
-Most Python analysis functions return dictionaries, but notable exceptions are:
-
-- `find_coherent_frequency` -> tuple `(fin_hz, bin_idx)`
-- `analyze_bit_activity` -> ndarray
-- `analyze_overflow` -> tuple
-- `analyze_enob_sweep` -> tuple `(enob_sweep, n_bits_vec)`
-- `fit_static_nonlin` -> tuple
-- `calibrate_weight_sine_lite` -> ndarray
-- `convert_cap_to_weight` -> tuple `(weights, c_total)`
-
-Also note:
-
-- `analyze_weight_radix` now returns a dict, not a bare array
-- `compute_spectrum` returns both metrics and plot data
-
-When docs conflict, trust source exports and packaged examples over old README
-text.
-
-## 6. What To Open Next
-
-- Need a signature or return key: open `references/api-quickref.md`
-- Need a real example file to adapt: open `references/example-map.md`
+Every code block in this file (and in `references/advanced-debug.md`) is
+exercised by `python/tests/integration/test_user_guide_skill_examples.py`
+— if a future edit breaks one, that test fails.

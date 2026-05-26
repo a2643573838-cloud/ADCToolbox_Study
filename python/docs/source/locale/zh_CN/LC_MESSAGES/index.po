@@ -4,7 +4,7 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: ADCToolbox 0.5.0\n"
+"Project-Id-Version: ADCToolbox 0.8.0\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-03-10 20:52+0800\n"
 "PO-Revision-Date: 2026-03-10 20:52+0800\n"
@@ -100,3 +100,27 @@ msgstr ":ref:`modindex`"
 #: ../../source/index.rst:36
 msgid ":ref:`search`"
 msgstr ":ref:`search`"
+
+#: ../../source/index.rst:26
+msgid "Complete Documentation"
+msgstr "完整文档"
+
+#: ../../source/index.rst:30
+msgid "Browse the Sphinx docs"
+msgstr "浏览 Sphinx 文档"
+
+#: ../../source/index.rst:41
+msgid "Common Starting Points"
+msgstr "常用入口"
+
+#: ../../source/index.rst:67
+msgid "Analysis Areas"
+msgstr "分析领域"
+
+#: ../../source/index.rst:108
+msgid "Outputs"
+msgstr "输出示例"
+
+#: ../../source/index.rst:132
+msgid "Reference"
+msgstr "参考"

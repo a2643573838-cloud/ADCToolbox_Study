@@ -17,6 +17,8 @@ current packaged examples under `python/src/adctoolbox/examples/`.
   `02_spectrum/exp_s02_analyze_spectrum_interactive.py`
 - Save or reuse figures:
   `02_spectrum/exp_s03_analyze_spectrum_savefig.py`
+- SAR FFT-length sweep near Nyquist:
+  `02_spectrum/exp_s09_sar_fft_length_near_nyquist.py`
 
 ## Example Families
 
@@ -43,6 +45,14 @@ current packaged examples under `python/src/adctoolbox/examples/`.
   `04_debug_analog/exp_a03_analyze_error_by_phase.py`
 - Full weight calibration:
   `05_debug_digital/exp_d02_cal_weight_sine.py`
+- SAR unit-cap mismatch without calibration:
+  `05_debug_digital/exp_d15_sar_unit_cap_mismatch_uncal_spectra.py`
+- SAR redundancy and unit-cap mismatch Monte Carlo calibration:
+  `05_debug_digital/exp_d16_sar_unit_cap_mismatch_mc.py`
+- SAR MSB +1% error, strict binary vs third-weight repeat calibration:
+  `05_debug_digital/exp_d17_sar_msb_error_binary_vs_repeat_calibration.py`
+- Redundant SAR unit-cap mismatch calibration versus training length:
+  `05_debug_digital/exp_d18_sar_redundant_mismatch_training_length_sweep.py`
 - AOUT dashboard:
   `06_use_toolsets/exp_t01_aout_dashboard_single.py`
 - DOUT dashboard:
@@ -57,3 +67,35 @@ current packaged examples under `python/src/adctoolbox/examples/`.
 - Calibration examples usually use normalized `freq=Fin/Fs`.
 - The toolset examples are the fastest way to see how multiple helpers are
   composed together.
+
+## Advanced examples
+
+For tasks covered by `references/advanced-debug.md`, adapt these
+packaged scripts:
+
+- Dashboards (multi-plot summaries):
+  `06_use_toolsets/exp_t01_aout_dashboard_single.py`,
+  `exp_t02_aout_dashboard_batch.py`,
+  `exp_t03_dout_dashboard_single.py`,
+  `exp_t04_dout_dashboard_batch.py`
+- Phase-plane:
+  `04_debug_analog/exp_a41_analyze_phase_plane.py`,
+  `exp_a42_analyze_error_phase_plane.py`
+- Bit-level / overflow / ENOB sweep:
+  `05_debug_digital/exp_d11_bit_activity.py`,
+  `exp_d12_sweep_bit_enob.py`,
+  `exp_d14_overflow_check.py`,
+  `exp_d15_sar_unit_cap_mismatch_uncal_spectra.py`,
+  `exp_d16_sar_unit_cap_mismatch_mc.py`,
+  `exp_d17_sar_msb_error_binary_vs_repeat_calibration.py`,
+  `exp_d18_sar_redundant_mismatch_training_length_sweep.py`
+- Error decomposition (by-phase / by-value / harmonic / PDF / spectrum / autocorr / envelope):
+  `04_debug_analog/exp_a02_*`, `exp_a03_*`, `exp_a11_*`, `exp_a12_*`,
+  `exp_a21_*` through `exp_a25_*`
+- Static nonlinearity / INL from sine:
+  `04_debug_analog/exp_a31_fit_static_nonlin.py`,
+  `exp_a32_inl_from_sine_sweep_length.py`
+
+Cap-array → normalized weights (`convert_cap_to_weight`) is not
+packaged as a standalone example; the inline snippet in
+`references/advanced-debug.md` is the canonical reference.

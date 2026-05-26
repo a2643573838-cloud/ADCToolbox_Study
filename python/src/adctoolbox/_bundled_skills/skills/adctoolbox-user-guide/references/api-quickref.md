@@ -3,7 +3,12 @@
 Use this file for import routing and return-shape reminders. If you need a
 runnable pattern, open `example-map.md` instead.
 
-## Flat Imports
+## Basic
+
+Spectrum / coherent-sampling / SAR-weight-cal / synthetic-stim /
+buffer-validation tier — what `SKILL.md` builds the basic workflow on.
+
+### Flat Imports
 
 ```python
 from adctoolbox import (
@@ -11,6 +16,40 @@ from adctoolbox import (
     analyze_spectrum_polar,
     find_coherent_frequency,
     fit_sine_4param,
+    calibrate_weight_sine,
+)
+```
+
+### Submodule Imports
+
+```python
+from adctoolbox.siggen import ADC_Signal_Generator
+from adctoolbox.calibration import calibrate_weight_sine_lite
+from adctoolbox.fundamentals import validate_aout_data, validate_dout_data
+from adctoolbox.spectrum import compute_spectrum
+```
+
+### Default Entry Points
+
+- Dynamic FFT metrics:
+  `analyze_spectrum`, `analyze_spectrum_polar`, `compute_spectrum`
+- Digital calibration:
+  `calibrate_weight_sine`, `calibrate_weight_sine_lite`
+- Synthetic signals:
+  `ADC_Signal_Generator`
+- Pre-flight checks / coherent setup:
+  `validate_aout_data`, `validate_dout_data`, `find_coherent_frequency`,
+  `fit_sine_4param`
+
+## Advanced
+
+Open `advanced-debug.md` first when working on these — it has
+worked snippets organized by question.
+
+### Flat Imports
+
+```python
+from adctoolbox import (
     analyze_error_by_value,
     analyze_error_by_phase,
     analyze_error_pdf,
@@ -21,7 +60,6 @@ from adctoolbox import (
     analyze_decomposition_time,
     analyze_decomposition_polar,
     fit_static_nonlin,
-    calibrate_weight_sine,
     analyze_bit_activity,
     analyze_overflow,
     analyze_weight_radix,
@@ -46,51 +84,94 @@ from adctoolbox import (
 )
 ```
 
-## Submodule Imports
+### Submodule Imports
 
 ```python
-from adctoolbox.siggen import ADC_Signal_Generator
 from adctoolbox.toolset import generate_aout_dashboard, generate_dout_dashboard
-from adctoolbox.calibration import calibrate_weight_sine_lite
-from adctoolbox.fundamentals import validate_aout_data, validate_dout_data, convert_cap_to_weight
-from adctoolbox.aout import analyze_phase_plane, analyze_error_phase_plane
-from adctoolbox.spectrum import compute_spectrum
+from adctoolbox.fundamentals import convert_cap_to_weight
+from adctoolbox.aout import (
+    analyze_phase_plane, analyze_error_phase_plane, decompose_harmonic_error,
+)
 ```
+
+### Default Entry Points
+
+- Analog error debug:
+  `analyze_error_*` helpers, `decompose_harmonic_error`
+- Dashboards:
+  `generate_aout_dashboard`, `generate_dout_dashboard`
+- Phase-plane:
+  `analyze_phase_plane`, `analyze_error_phase_plane`
+- Bit-level / per-code:
+  `analyze_bit_activity`, `analyze_overflow`, `analyze_weight_radix`,
+  `analyze_enob_sweep`
+- Static nonlinearity:
+  `fit_static_nonlin`
+- Cap-to-weight:
+  `convert_cap_to_weight`
 
 ## CLI
 
 ```bash
 adctoolbox-get-examples
 adctoolbox-get-examples my_examples_dir
-adctoolbox-install-skill
-adctoolbox-install-skill --dev
+adctoolbox-install-skill --dest ~/.codex/skills
+adctoolbox-install-skill --status --dest ~/.codex/skills
+adctoolbox-install-skill --dev --editable --force --dest ~/.codex/skills
 ```
 
 ## Key Conventions
 
-- `fit_sine_4param(... )["frequency"]` is normalized `Fin/Fs`, not Hz.
-- Calibration helpers such as `calibrate_weight_sine(..., freq=...)` and
-  `calibrate_weight_sine_lite(..., freq=...)` expect normalized `Fin/Fs`.
-- `find_coherent_frequency(...)` returns a tuple:
-  `(fin_actual_hz, best_bin)`.
-- `analyze_overflow(...)` returns a tuple.
-- `analyze_enob_sweep(...)` returns a tuple:
-  `(enob_sweep, n_bits_vec)`.
-- `calibrate_weight_sine_lite(...)` returns weights only.
-- `analyze_weight_radix(...)` returns a dict.
-- `compute_spectrum(...)` returns both `metrics` and `plot_data`.
+### Frequency
 
-## Default Entry Points
+- `fit_sine_4param(...)["frequency"]` is normalized `Fin/Fs` (range 0–0.5),
+  not Hz.
+- `calibrate_weight_sine(bits, freq=...)` and `calibrate_weight_sine_lite(bits,
+  freq)` expect normalized `freq = Fin/Fs`. The `_lite` variant takes `freq`
+  positionally (not as a keyword) and is required (no auto-search).
+- `analyze_enob_sweep(bits, freq=...)` and `generate_dout_dashboard(bits,
+  freq=...)` also expect normalized `freq`.
+- `generate_aout_dashboard(aout, fs=..., freq=...)` takes `freq` in Hz (it
+  normalizes internally).
+- `find_coherent_frequency(fs, fin_target, n_fft)` returns a tuple
+  `(fin_actual_hz, best_bin)`. Argument order matters: `fs` first, then
+  `fin_target`, then `n_fft`.
+- `analyze_spectrum` does NOT take `Fin` — the fundamental is auto-detected.
+- `analyze_spectrum(..., create_plot=True, ax=ax)` plots directly onto a
+  Matplotlib subplot. Use `compute_spectrum` only when you need raw plot data
+  for custom rendering.
 
-- Dynamic FFT metrics:
-  `analyze_spectrum`, `analyze_spectrum_polar`
-- Analog debug:
-  `fit_sine_4param` and the `analyze_error_*` helpers
-- Digital calibration:
-  `calibrate_weight_sine`, `calibrate_weight_sine_lite`
-- Dashboards:
-  `generate_aout_dashboard`, `generate_dout_dashboard`
-- Synthetic signals:
-  `ADC_Signal_Generator`
+### Return shapes
+
+- Spectrum metrics dicts (`analyze_spectrum`, `analyze_spectrum_polar`,
+  `compute_spectrum["metrics"]`) use lowercase `_dbc` keys: `enob`,
+  `sndr_dbc`, `sfdr_dbc`, `snr_dbc`, `thd_dbc`, `sig_pwr_dbfs`,
+  `noise_floor_dbfs`, `nsd_dbfs_hz`, `harmonics_dbc` — **not**
+  uppercase `SNDR` / `SFDR` / `ENOB`.
+- `compute_spectrum(...)` returns a dict with top-level keys `metrics` and
+  `plot_data` (the latter has `freq`, `power_spectrum_db_plot`,
+  `complex_spectrum`, `fundamental_bin`, …).
+- `calibrate_weight_sine(...)` returns a dict: `weight`, `offset`,
+  `calibrated_signal`, `ideal`, `error`, `refined_frequency`.
+  `calibrate_weight_sine_lite(...)` returns just the weights ndarray.
+- `analyze_bit_activity(bits)` returns an ndarray (% of 1's per bit).
+- `analyze_overflow(bits, weight)` returns a 4-tuple of ndarrays
+  `(range_min, range_max, ovf_pct_zero, ovf_pct_one)`. The second argument
+  is the calibrated weights vector — not optional.
+- `analyze_enob_sweep(bits, freq=...)` returns `(enob_sweep, n_bits_vec)`.
+- `analyze_weight_radix(weights)` returns a dict (`radix`, `wgtsca`, `effres`).
+  `effres` is the significant-weight span:
+  `log2(sum(abs_w_sig) / min(abs_w_sig) + 1)`, with the sorted absolute-weight
+  tail dropped after the first adjacent ratio `>= 3`. Treat it as a theoretical
+  SAR/DAC weight-list resolution estimate, not a missing-code, DNL/INL, or
+  SAR-reachability check.
+- `fit_static_nonlin(sig_distorted, order)` returns
+  `(k2, k3, fitted_sine, fitted_transfer)`. Input is a distorted signal,
+  not INL/DNL data; `order >= 2`.
+- `convert_cap_to_weight(caps_bit, caps_bridge, caps_parasitic)` takes
+  three same-length arrays (LSB→MSB; pass zeros where there is no
+  bridge / parasitic) and returns `(weights, c_total)`.
+- `analyze_phase_plane(aout, fs=...)` and `analyze_error_phase_plane(aout,
+  fs=...)` do NOT take `Fin` — they self-fit the fundamental.
 
 If unsure which file to copy from, open `example-map.md`.
