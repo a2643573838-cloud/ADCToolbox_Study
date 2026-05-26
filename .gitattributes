@@ -1,5 +1,11 @@
 * text=auto
 
+# Local study/work folders. If upstream ever adds the same paths, keep the
+# local version during merges so personal notes and experiments are not lost.
+MayDay_ADCToolbox_Study/** merge=ours
+adc_plotspec/** merge=ours
+my_work/** merge=ours
+
 *.fig binary
 *.mat binary
 *.mdl binary diff merge=mlAutoMerge
